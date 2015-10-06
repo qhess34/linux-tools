@@ -1,0 +1,92 @@
+#!/bin/bash
+date
+####
+# CONFIGURATION
+####
+
+# Repertoire contenant les logs Apache
+LOG_DIR="/data/web/*/*/logs/" 
+
+# Fichiers à prendre en compte
+ROTATE_FILES="http_access_log http_error_log"
+
+# Nombre de jours avant archive 
+MAX_DAY_ARCHIVE=1
+
+# Repertoire d'archive
+ARCHIVE_DIRECTORY="/data/Archives/logs/apache_homes/"
+
+# Age maximum des archives (en jours)
+MAX_ARCHIVES_AGE=36500
+
+# Suffixe 
+SUFFIXE_FILENAME="_`date +%d%b%Y`"
+
+#### 
+# SCRIPT
+####
+
+###
+# FONCTIONS
+###
+
+## ROTATE ##
+# $1 => Chemin du log
+function rotate()
+{
+	to_log_file=$1$SUFFIXE_FILENAME.gz
+	a=0
+
+	while [[ -e $to_log_file ]]
+	do
+		a=$(($a+1))
+		suffixe="-"$a
+		to_log_file=$1$SUFFIXE_FILENAME$suffixe.gz
+	done	
+
+	echo "Rotation $1 => $to_log_file"
+
+	echo "[DEBUG] gzip -9 -c $1 > $to_log_file && > $1"
+	gzip -9 -c $1 > $to_log_file && > $1
+}
+
+## ARCHIVE ##
+# $1 => Chemin du log
+function archive()
+{
+	to_archive_dir=`dirname $1 | sed s'/\/logs//'`
+
+	last_update_year=`date -r $1 +%Y`
+	last_update_month=`date -r $1 +%b`
+	archive_dir=$ARCHIVE_DIRECTORY$last_update_year"/"$last_update_month"/"$to_archive_dir
+	
+	echo "Archivage $1" 
+
+	echo "[DEBUG] mkdir -p $archive_dir"
+	echo "[DEBUG] mv $1 $archive_dir"
+	mkdir -p $archive_dir
+	mv $1 $archive_dir
+}
+
+for i in $ROTATE_FILES
+do
+	for j in `find $LOG_DIR -name $i`
+	do
+
+		rotate $j
+
+	done
+
+	#cd $LOG_DIR
+	cd /data/web
+	
+	for k in `find . -name "$i*.gz"  -mtime +$MAX_DAY_ARCHIVE | grep -v "^./data/"` 
+	do
+
+		archive $k
+
+	done
+
+	find $ARCHIVE_DIRECTORY -name "$i*.gz" -mtime +$MAX_ARCHIVES_AGE -type f -exec echo "Suppression {}" \; -exec  rm -f {} \;
+done
+
